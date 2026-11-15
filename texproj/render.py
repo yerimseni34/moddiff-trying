@@ -62,6 +62,7 @@ def render_view(mesh, view, scale, size, bg=(255, 255, 255), texture=None,
         key = c * 0.8 + u * 0.6
         key /= np.linalg.norm(key)
         lam = 0.55 + 0.35 * np.clip(n @ key, 0, 1) + 0.10 * np.clip(n @ c, 0, 1)
+        lam = np.where(n @ c < -0.05, 0.3, lam)  # back faces (holes in the mesh) shown dark
         if texture is not None:
             lam = 0.85 + 0.15 * np.clip(n @ c, 0, 1)  # near-unlit for baked previews
         col = col * lam[:, None]

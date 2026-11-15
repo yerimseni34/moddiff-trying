@@ -35,10 +35,10 @@ def context(work):
 
 # ------------------------------------------------------------------- render
 def prepare(model, work, views="6", size=1024, bg="#ffffff", up="y", yaw=0.0,
-            unwrap=False, sheet_cell=768, log=print):
+            unwrap=False, sheet_cell=768, strip=False, log=print):
     work = Path(work)
     (work / "views").mkdir(parents=True, exist_ok=True)
-    m = meshio.load_mesh(model, up=up, yaw=yaw, unwrap=unwrap, log=log)
+    m = meshio.load_mesh(model, up=up, yaw=yaw, unwrap=unwrap, strip=strip, log=log)
     meshio.save_work(m, work)
     vs = parse_views(views)
     scale = fit_scale(m.p, vs)
@@ -88,12 +88,14 @@ def _stylized_images(ctx, log):
     d = ctx["work"] / "stylized"
     views = ctx["views"]
     paths = [_find(d, v.name) for v in views]
-    if all(paths):
-        return [Image.open(p).convert("RGB") for p in paths]
     sheet = _find(d, "sheet")
-    if sheet is None:
+    if any(paths) or sheet is None:
+        if not any(paths):
+            raise SystemExit(f"no stylized images in {d} (expected {[v.name for v in views]} or sheet.png)")
         missing = [v.name for v, p in zip(views, paths) if p is None]
-        raise SystemExit(f"missing stylized images in {d}: {missing} (or put a single sheet.png there)")
+        if missing:
+            log(f"  [note] no stylized image for {missing} - skipping those views")
+        return [Image.open(p).convert("RGB") if p else None for p in paths]
     log(f"splitting {sheet.name} into {len(views)} cells")
     return split_sheet(Image.open(sheet).convert("RGB"), len(views))
 
@@ -106,6 +108,8 @@ def _bake(ctx, opts, use_fix=True, log=print):
     (work / "aligned").mkdir(exist_ok=True)
     layers = []
     for v, im in zip(ctx["views"], _stylized_images(ctx, log)):
+        if im is None:
+            continue
         w, c, info, aligned = baker.view_layer(v, im, align=opts.get("align", True))
         aligned.save(work / "aligned" / f"{v.name}.png")
         note = f" (auto-aligned, was {info['iou_before']:.3f})" if info.get("aligned") else ""

@@ -13,6 +13,7 @@ def _add_render(p):
     p.add_argument("--up", choices=["y", "z"], default="y", help="model up axis (z = raw Blender coords)")
     p.add_argument("--yaw", type=float, default=0.0, help="rotate model around up axis (deg) so its front faces the 'front' view")
     p.add_argument("--unwrap", action="store_true", help="force a fresh xatlas UV unwrap")
+    p.add_argument("--no-texture", action="store_true", help="ignore the model's existing texture (render as clay)")
     p.add_argument("--sheet-cell", type=int, default=768, help="cell size of the grid sheet")
 
 
@@ -79,7 +80,7 @@ def main(argv=None):
         print(f"[{time.time() - t0:6.1f}s] {msg}", flush=True)
 
     if a.cmd == "render":
-        pl.prepare(a.model, a.work, a.views, a.size, a.bg, a.up, a.yaw, a.unwrap, a.sheet_cell, log)
+        pl.prepare(a.model, a.work, a.views, a.size, a.bg, a.up, a.yaw, a.unwrap, a.sheet_cell, a.no_texture, log)
     elif a.cmd == "stylize":
         pl.stylize(a.work, a.ref, a.prompt, a.mode, jitter=a.mock_jitter, log=log, **_sty(a))
     elif a.cmd == "project":
@@ -89,7 +90,7 @@ def main(argv=None):
             pl.fix_stylize(a.work, a.ref, a.prompt, log=log, **_sty(a))
             pl.project(a.work, _opts(a), log)
     elif a.cmd == "run":
-        pl.prepare(a.model, a.work, a.views, a.size, a.bg, a.up, a.yaw, a.unwrap, a.sheet_cell, log)
+        pl.prepare(a.model, a.work, a.views, a.size, a.bg, a.up, a.yaw, a.unwrap, a.sheet_cell, a.no_texture, log)
         pl.stylize(a.work, a.ref, a.prompt, a.mode, jitter=a.mock_jitter, log=log, **_sty(a))
         if a.fix_views > 0 and pl.fix_prepare(a.work, a.fix_views, _opts(a), log):
             pl.fix_stylize(a.work, a.ref, a.prompt, log=log, **_sty(a))

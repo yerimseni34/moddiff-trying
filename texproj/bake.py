@@ -80,7 +80,7 @@ class Baker:
 
         x, y, z = project_points(self.pos, view, self.scale, R)
         _, _, c = basis(view)
-        cos = self.nrm @ c
+        cos = self.nrm @ c  # back faces are never painted: they share texels with their front side
         ix = np.clip(np.floor(x).astype(np.int64), 0, R - 1)
         iy = np.clip(np.floor(y).astype(np.int64), 0, R - 1)
         tan = np.sqrt(np.clip(1 - cos * cos, 0, 1)) / np.clip(cos, 0.1, 1)

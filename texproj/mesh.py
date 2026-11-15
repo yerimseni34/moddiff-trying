@@ -43,7 +43,7 @@ def _finish(mesh, up="y", yaw=0.0):
     return mesh
 
 
-def load_mesh(path, up="y", yaw=0.0, unwrap=False, log=print):
+def load_mesh(path, up="y", yaw=0.0, unwrap=False, strip=False, log=print):
     import trimesh
     m = trimesh.load(str(path), force="mesh", process=False)
     v = np.asarray(m.vertices, np.float64)
@@ -59,6 +59,8 @@ def load_mesh(path, up="y", yaw=0.0, unwrap=False, log=print):
             base = np.asarray(img.convert("RGB"))
     elif getattr(vis, "kind", None) == "vertex":
         vcol = np.asarray(vis.vertex_colors)[:, :3] / 255.0
+    if strip:  # ignore existing texture / vertex colours: render as plain clay
+        base = vcol = None
     if uv is None or unwrap:
         try:
             import xatlas

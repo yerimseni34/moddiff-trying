@@ -31,13 +31,13 @@ def _outputs(work):
     return str(out / "model.glb"), str(out / "preview.png"), files
 
 
-def do_render(model, views, up, yaw, unwrap, size):
+def do_render(model, views, up, yaw, unwrap, size, strip=False):
     if not model:
         raise gr.Error("Bir model dosyası seç (OBJ / GLB / PLY / STL).")
     work = ROOT / Path(model).stem
     if work.exists():
         shutil.rmtree(work)
-    _, log = _run(pl.prepare, model, work, views=views, size=int(size), up=up, yaw=float(yaw), unwrap=unwrap)
+    _, log = _run(pl.prepare, model, work, views=views, size=int(size), up=up, yaw=float(yaw), unwrap=unwrap, strip=strip)
     job = pl.load_job(work)
     return (str(work), str(work / "sheet.png"), [str(work / "views" / f"{v.name}.png") for v in job["views"]],
             manual_grid_prompt(job["views"]), log)
@@ -122,6 +122,7 @@ def build():
                     up = gr.Radio(["y", "z"], value="y", label="Yukarı ekseni", info="z = ham Blender koordinatı")
                     yaw = gr.Slider(0, 270, value=0, step=90, label="Modeli döndür (ön yüz 'front' açısına baksın)")
                     unwrap = gr.Checkbox(label="UV'yi yeniden aç (mirror / üst üste binen UV varsa)")
+                strip = gr.Checkbox(label="Mevcut texture'ı yok say (düz gri render)")
                 b_render = gr.Button("Render al", variant="primary")
             with gr.Column(scale=2):
                 sheet = gr.Image(label="sheet.png — bunu indir, stil referansınla birlikte ChatGPT'ye ver",
@@ -161,7 +162,7 @@ def build():
         log = gr.Textbox(label="Log (IoU < 0.9 olan açıyı yeniden ürettir)", lines=8, interactive=False)
 
         res = [viewer, preview, files, log]
-        b_render.click(do_render, [model, views, up, yaw, unwrap, size], [work, sheet, gallery, prompt_out, log])
+        b_render.click(do_render, [model, views, up, yaw, unwrap, size, strip], [work, sheet, gallery, prompt_out, log])
         b_project.click(do_project, [work, sty_sheet, sty_files, tex], res)
         b_api.click(do_api, [work, refs, api_prompt, mode, img_model, tex], res)
         b_fix.click(do_fix_render, [work, tex], [fix_gallery, fix_prompt, log])
