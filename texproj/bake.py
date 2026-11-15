@@ -73,8 +73,13 @@ class Baker:
             dz = np.maximum(dz, np.pad(d, pad))
             pad[ax] = (1, 0)
             dz = np.maximum(dz, np.pad(d, pad))
-        inside = ndi.distance_transform_edt(mask)
-        bad = (~mask) | (dz > 8 * fp) | (mask & ~fg_r & (inside <= 2.5 * self.feather_px))
+        # background-coloured pixels close to any silhouette / occlusion edge are the image model
+        # leaving gaps (e.g. between hair strands) - never project those
+        bgc = np.abs(np.asarray(img, np.int16) - np.array(self.bg, np.int16)).max(-1) <= 28
+        bg_r = np.asarray(Image.fromarray(bgc.astype(np.uint8) * 255).resize((R, R), Image.NEAREST)) > 127
+        edge = (~mask) | (dz > 8 * fp)
+        near = ndi.distance_transform_edt(~edge) <= 2.5 * self.feather_px
+        bad = edge | (near & (bg_r | ~fg_r))
         dist = ndi.distance_transform_edt(~bad)
         feath = smoothstep((dist - 1.0) / self.feather_px).astype(np.float32)
 
