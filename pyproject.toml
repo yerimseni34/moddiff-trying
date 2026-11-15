@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "texproj"
+version = "0.1.0"
+description = "Multi-view AI texturing by projection: render -> stylize (GPT image) -> bake"
+requires-python = ">=3.9"
+dependencies = ["numpy", "pillow", "scipy", "trimesh", "xatlas", "openai"]
+
+[project.scripts]
+texproj = "texproj.cli:main"
+
+[tool.setuptools]
+packages = ["texproj"]
