@@ -65,7 +65,13 @@ def main(argv=None):
     _add_stylize(p)
     _add_project(p)
     p.add_argument("--fix-views", type=int, default=3, help="max extra AI fix views (0 = off)")
+    p = sub.add_parser("ui", help="open the browser UI")
+    p.add_argument("--port", type=int, default=7860)
+    p.add_argument("--root", default="work_ui", help="folder where projects are stored")
     a = ap.parse_args(argv)
+    if a.cmd == "ui":
+        from .ui import launch
+        return launch(a.root, a.port)
 
     t0 = time.time()
 

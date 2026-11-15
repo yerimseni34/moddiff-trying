@@ -9,10 +9,21 @@ Blender'a hiç girmeden, tek komutla:
 
 Çıktı: `out/texture.png`, `out/model.obj` (+mtl), `out/model.glb`, `out/preview.png`.
 
+## Arayüz
+
+```bash
+texproj ui
+```
+
+Tarayıcıda açılır: modeli yükle → **Render al** → `sheet.png`'yi indirip (hazır prompt'la birlikte)
+ChatGPT'de boyat → boyanmış sheet'i yükle → **Projekte et**. Sonuç 3D görüntüleyicide ve 8 açılı
+önizlemede görünür; texture / GLB / OBJ indirilebilir. 3. adım görülmeyen yerler için düzeltme
+açıları üretir. API anahtarın varsa "API ile (otomatik)" sekmesi boyamayı da kendi yapar.
+
 ## Kurulum
 
 ```bash
-pip install -e .            # numpy, pillow, scipy, trimesh, xatlas, openai
+pip install -e .            # numpy, pillow, scipy, trimesh, xatlas, openai, gradio
 export OPENAI_API_KEY=sk-...
 ```
 

@@ -7,7 +7,7 @@ name = "texproj"
 version = "0.1.0"
 description = "Multi-view AI texturing by projection: render -> stylize (GPT image) -> bake"
 requires-python = ">=3.9"
-dependencies = ["numpy", "pillow", "scipy", "trimesh", "xatlas", "openai"]
+dependencies = ["numpy", "pillow", "scipy", "trimesh", "xatlas", "openai", "gradio>=5"]
 
 [project.scripts]
 texproj = "texproj.cli:main"

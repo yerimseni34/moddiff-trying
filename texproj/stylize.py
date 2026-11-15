@@ -29,6 +29,26 @@ def mock_color(p):
     return 0.15 + 0.6 * base * (0.55 + 0.45 * chk)
 
 
+def manual_grid_prompt(views, extra=""):
+    """Prompt to paste into ChatGPT together with sheet.png + style reference(s)."""
+    from .render import grid_shape as _gs
+    cols, rows = _gs(len(views))
+    names = ", ".join(v.name.replace("_", " ") for v in views)
+    return (f"The first image is a sheet of {len(views)} orthographic renders of the SAME single 3D model in a "
+            f"{cols}x{rows} grid of equal square cells (left to right, top to bottom: {names}). The other "
+            "image(s) are STYLE REFERENCES. Paint/texture the model in every cell in exactly the art style, "
+            "colour palette and material rendering of the style references. All cells show the same object, "
+            "so colours and details must be fully consistent between views. Keep every cell exactly where it "
+            f"is and output the image in the same aspect ratio as the sheet. {RULES} {extra}").strip()
+
+
+def manual_fix_prompt(extra=""):
+    return ("This is a render of a textured 3D model. Most of the texture is finished, but some regions are "
+            "only a blurry / smeared placeholder. Repaint those blurry regions with clean, detailed texture "
+            "that continues the surrounding painted surface seamlessly, in the same art style. Leave the "
+            f"already-detailed regions unchanged. {RULES} {extra}").strip()
+
+
 class MockStylizer:
     """Renders the ground-truth 3D pattern, with optional random drift/zoom per view
     to imitate an image model that does not keep things pixel-exact."""

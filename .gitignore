@@ -2,3 +2,5 @@ work*/
 __pycache__/
 *.egg-info/
 .env
+work_ui/
+.gradio/
