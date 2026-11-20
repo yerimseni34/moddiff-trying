@@ -20,6 +20,14 @@ ChatGPT'de boyat → boyanmış sheet'i yükle → **Projekte et**. Sonuç 3D g�
 önizlemede görünür; texture / GLB / OBJ indirilebilir. 3. adım görülmeyen yerler için düzeltme
 açıları üretir. API anahtarın varsa "API ile (otomatik)" sekmesi boyamayı da kendi yapar.
 
+## Windows'ta hızlı başlangıç
+
+1. [python.org](https://www.python.org/downloads/) üzerinden **Python 3.12** kur
+   (kurulumda **"Add python.exe to PATH"** kutusunu işaretle).
+2. Bu repoyu indir (GitHub'da branch'i seç → **Code → Download ZIP**) ve bir klasöre çıkar.
+3. **`kur.bat`**'a çift tıkla (bir kere, birkaç dakika sürer).
+4. **`baslat.bat`**'a çift tıkla → arayüz tarayıcıda açılır (http://127.0.0.1:7860).
+
 ## Kurulum
 
 ```bash

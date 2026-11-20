@@ -4,3 +4,4 @@ __pycache__/
 .env
 work_ui/
 .gradio/
+.venv/
