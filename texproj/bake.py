@@ -21,6 +21,20 @@ def smoothstep(x):
     return x * x * (3 - 2 * x)
 
 
+def regional(pos, val, cell=0.025, sigma=1.0):
+    """Average a per-texel value over its 3D neighbourhood (voxel grid + gaussian blur).
+    Thin scattered features (crease lines, edges) average out, whole regions stay."""
+    lo = pos.min(0)
+    idx = np.floor((pos - lo) / cell).astype(np.int64)
+    shape = tuple(idx.max(0) + 1)
+    flat = np.ravel_multi_index(idx.T, shape)
+    n = np.prod(shape)
+    s = ndi.gaussian_filter(np.bincount(flat, weights=val, minlength=n).reshape(shape), sigma)
+    c = ndi.gaussian_filter(np.bincount(flat, minlength=n).astype(np.float64).reshape(shape), sigma)
+    return (s / np.maximum(c, 1e-9)).ravel()[flat].astype(np.float32)
+
+
+
 class Baker:
     def __init__(self, mesh, tex=2048, depth_res=2048, cos_min=0.15,
                  feather=0.012, sharp=3.0, bg=(255, 255, 255), log=print):
@@ -79,14 +93,18 @@ class Baker:
         # leaving gaps (e.g. between hair strands) - never project those
         bgc = np.abs(np.asarray(img, np.int16) - np.array(self.bg, np.int16)).max(-1) <= 28
         bg_r = np.asarray(Image.fromarray(bgc.astype(np.uint8) * 255).resize((W, H), Image.NEAREST)) > 127
-        edge = (~mask) | (dz > 8 * fp)
+        occ = (dz > 8 * fp) & mask  # inner depth steps (eye sockets, hair over skin, ...)
+        edge = (~mask) | occ
         near = ndi.distance_transform_edt(~edge) <= 2.5 * self.feather_px
-        bad = edge | (near & (bg_r | ~fg_r))
+        bad = (~mask) | (near & (bg_r | ~fg_r))
         if paint_mask is not None:  # e.g. AI fix views: only the repainted pixels are trustworthy
             pm = pad_to_aspect(paint_mask.convert("RGB"), W / H, (0, 0, 0)).convert("L")
             bad |= np.asarray(pm.resize((W, H), Image.NEAREST)) < 128
-        dist = ndi.distance_transform_edt(~bad)
-        feath = smoothstep((dist - 1.0) / self.feather_px).astype(np.float32)
+        # wide feather at the silhouette (where image models drift most), narrow one at inner
+        # depth steps - a wide one there would distrust whole faces (eyes / mouth are inset)
+        f_sil = smoothstep((ndi.distance_transform_edt(~bad) - 1.0) / self.feather_px)
+        f_occ = smoothstep((ndi.distance_transform_edt(~occ) - 1.0) / (self.feather_px / 3))
+        feath = (f_sil * f_occ).astype(np.float32)
 
         x, y, z = project_points(self.pos, view, W, H)
         _, _, c = basis(view)
@@ -96,7 +114,14 @@ class Baker:
         tan = np.sqrt(np.clip(1 - cos * cos, 0, 1)) / np.clip(cos, 0.1, 1)
         vis = (cos > self.cos_min) & (z <= zb[iy, ix] + fp * (1.5 * tan + 1.0) + 1e-4)
         w = np.zeros(self.N, np.float32)
-        w[vis] = ((cos[vis] - self.cos_min) / (1 - self.cos_min)) * feath[iy[vis], ix[vis]]
+        facing = (cos[vis] - self.cos_min) / (1 - self.cos_min)
+        w[vis] = facing * feath[iy[vis], ix[vis]]
+        # how directly any view has seen each texel, ignoring edge feathering (for "protect")
+        if not hasattr(self, "seen"):
+            self.seen = np.zeros(self.N, np.float32)
+        on = np.zeros(self.N, bool)
+        on[vis] = mask[iy[vis], ix[vis]] & fg_r[iy[vis], ix[vis]]
+        self.seen[on] = np.maximum(self.seen[on], facing[on[vis]])
         col = np.zeros((self.N, 3), np.float32)
         nz = w > 0
         arr = np.asarray(img, np.float32) / 255.0
@@ -111,28 +136,30 @@ class Baker:
         cs = [l[1] for l in layers]
         if gain and len(layers) > 1:
             cs = self._gain(ws, cs)
-        num = np.zeros((self.N, 3), np.float32)
-        den = np.zeros(self.N, np.float32)
-        best = np.zeros(self.N, np.float32)
-        for w, c in zip(ws, cs):
-            ww = w ** self.sharp
-            num += ww[:, None] * c
-            den += ww
-            best = np.maximum(best, w)
+        best = np.max(ws, axis=0)
         hole = best < hole_thresh
-        col = num / np.maximum(den, 1e-12)[:, None]
-        # disagreement between views (weighted colour std): seams / ghosting where views overlap
-        var = np.zeros(self.N, np.float32)
-        for w, c in zip(ws, cs):
-            var += (w ** self.sharp) * ((c - col) ** 2).sum(1)
-        dis = np.sqrt(var / np.maximum(den, 1e-12))
-        # how mixed the blend is (0 = one view decides alone, ->1 = several views averaged);
-        # a colour disagreement only shows as a seam / ghost where views actually get mixed
-        top = np.max([w ** self.sharp for w in ws], axis=0)
-        self.last_mix = np.where(den > 0, 1.0 - top / np.maximum(den, 1e-12), 0.0).astype(np.float32)
+        col, dis, mix = self._mix(ws, cs, self.sharp)
+        if len(layers) > 1:
+            # where mixed views disagree, averaging them would ghost (two different eyes, doubled
+            # stripes ...): there, let the view that sees the surface best decide almost alone
+            ghost = smoothstep((regional(self.pos, dis * mix) - 0.01) / 0.02)
+            if ghost.max() > 0:
+                col, dis, mix = self._mix(ws, cs, self.sharp + ghost * (16.0 - self.sharp))
+        self.last_mix = mix
         col[hole] = 0
         dis[hole] = 0
         return col, hole, best, dis
+
+    def _mix(self, ws, cs, sharp):
+        """Weighted blend with (per-texel) sharpness; also returns the colour disagreement between
+        the mixed views and how mixed the result is (0 = one view decides alone)."""
+        wws = [np.power(w, sharp) for w in ws]
+        den = np.maximum(sum(wws), 1e-12)
+        col = sum(ww[:, None] * c for ww, c in zip(wws, cs)) / den[:, None]
+        var = sum(ww * ((c - col) ** 2).sum(1) for ww, c in zip(wws, cs))
+        dis = np.sqrt(var / den).astype(np.float32)
+        mix = (1.0 - np.max(wws, axis=0) / den).astype(np.float32)
+        return col.astype(np.float32), dis, mix
 
     def _gain(self, ws, cs, iters=2):
         """Per-view colour gain so overlapping views agree in brightness/tint."""

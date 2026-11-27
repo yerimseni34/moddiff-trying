@@ -8,7 +8,7 @@ from . import mesh as meshio
 from .views import View, parse_views, fit_scale, fit_view, uniform_view, image_size
 from .render import render_view, raster_view, make_sheet, split_sheet, preview_sheet, hex_rgb, bilinear
 from .raster import interp
-from .bake import Baker, smoothstep
+from .bake import Baker, smoothstep, regional
 from .fix import select_fix_views
 
 IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
@@ -158,19 +158,6 @@ def _bake(ctx, opts, use_fix=True, log=print):
     return baker, col, hole, conf, dis
 
 
-def regional(pos, val, cell=0.025, sigma=1.0):
-    """Average a per-texel value over its 3D neighbourhood (voxel grid + gaussian blur).
-    Thin scattered features (crease lines, edges) average out, whole regions stay."""
-    lo = pos.min(0)
-    idx = np.floor((pos - lo) / cell).astype(np.int64)
-    shape = tuple(idx.max(0) + 1)
-    flat = np.ravel_multi_index(idx.T, shape)
-    n = np.prod(shape)
-    s = ndi.gaussian_filter(np.bincount(flat, weights=val, minlength=n).reshape(shape), sigma)
-    c = ndi.gaussian_filter(np.bincount(flat, minlength=n).astype(np.float64).reshape(shape), sigma)
-    return (s / np.maximum(c, 1e-9)).ravel()[flat].astype(np.float32)
-
-
 def need_map(hole, conf, dis, mix, pos):
     """Per-texel 0..1: how much a texel needs fixing. A texel counts if it is unpainted, only
     weakly seen, or the views that get mixed there disagree (= visible seam / ghosting) -
@@ -225,6 +212,11 @@ def fix_prepare(work, max_views=3, opts=None, log=print):
     tex = baker.to_texture(baker.fill3d(col, hole))
     needmap = ndi.maximum_filter(baker.flat_to_map(need), 3)
     Image.fromarray((needmap * 255).astype(np.uint8)).save(fixdir / "need.png")
+    # well-painted texels (clearly seen, views agree) are protected: the AI only sees them as context
+    agree = dis * baker.last_mix < 0.02
+    seen = getattr(baker, "seen", conf)
+    protect = smoothstep((seen - 0.35) / 0.2) * agree * ~hole
+    protmap = baker.flat_to_map(protect.astype(np.float32))
     mesh = ctx["mesh"]
     for v in views:
         W, H = image_size(v, ctx["size"])
@@ -234,10 +226,14 @@ def fix_prepare(work, max_views=3, opts=None, log=print):
         m = tri >= 0
         uv = interp(mesh.uv, mesh.f, tri[m], bary[m])
         hm = np.zeros((H, W), np.float32)
-        hm[m] = bilinear(needmap, uv[:, 0] * baker.T, (1 - uv[:, 1]) * baker.T)
+        pr = np.zeros((H, W), np.float32)
+        tu, tv = uv[:, 0] * baker.T, (1 - uv[:, 1]) * baker.T
+        hm[m] = bilinear(needmap, tu, tv)
+        pr[m] = bilinear(protmap, tu, tv)
         k = max(2, min(W, H) // 200)
-        hpx = ndi.binary_opening(hm > 0.3, iterations=k)  # drop thin lines (eye / mouth creases ...)
-        hpx = ndi.binary_dilation(hpx, iterations=2 * k)  # some overlap with the good paint around
+        core = ndi.binary_opening((hm > 0.3) & (pr < 0.5), iterations=k)  # drop thin lines / protected
+        hpx = ndi.binary_dilation(core, iterations=2 * k)  # a little overlap to blend into
+        hpx &= pr < 0.9  # but never into clearly well-painted surface (faces, logos ...)
         hpx &= ndi.binary_dilation(m, iterations=3)  # never ask to paint the background
         rgba = np.zeros((H, W, 4), np.uint8)
         rgba[..., 3] = np.where(hpx, 0, 255)  # transparent = region to repaint
