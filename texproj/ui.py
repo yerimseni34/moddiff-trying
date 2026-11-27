@@ -115,11 +115,48 @@ def step2(work, names, tex, *painted):
             n_ok += 1
     if n_ok == 0:
         raise gr.Error("Hiç boyanmış görsel yüklenmedi.")
+    if (work / "fix").exists():  # an earlier AI repair belongs to the old paint - drop it
+        shutil.rmtree(work / "fix")
     _, log = _run(pl.project, work, dict(tex=int(tex)))
     out = work / "out"
-    files = [str(out / f) for f in ("model.glb", "texture.png", "model.obj", "model.mtl")]
+    needp, _ = _run(pl.need_preview, work)
     return (str(work / "clay.glb"), str(out / "model.glb"), str(out / "preview.png"),
-            files, _summary(log, n_ok, len(names)), log)
+            _files(out), _summary(log, n_ok, len(names)), str(needp), [], log)
+
+
+def _files(out):
+    return [str(out / f) for f in ("model.glb", "texture.png", "model.obj", "model.mtl")]
+
+
+def step3_ai(work, tex, prompt, strength, nviews, model, ip):
+    if not work or not (Path(work) / "out" / "texture.png").exists():
+        raise gr.Error("Önce 2. adımda Çalıştır'a bas.")
+    from . import localai
+    ok, msg = localai.available()
+    if not ok:
+        raise gr.Error(msg)
+    work = Path(work)
+    local = dict(model=(model or "").strip() or None, strength=float(strength), ip_scale=float(ip))
+    _, log = _run(pl.ai_fix, work, prompt or "", int(nviews), dict(tex=int(tex)), local)
+    out = work / "out"
+    pairs = []
+    fx = work / "fix"
+    if (fx / "cameras.json").exists():
+        import json
+        for i, c in enumerate(json.loads((fx / "cameras.json").read_text()), 1):
+            pairs += [(str(fx / "views" / f"{c['name']}.png"), f"{i} · önce"),
+                      (str(fx / "stylized" / f"{c['name']}.png"), f"{i} · AI sonrası")]
+    lines = [msg]
+    for l in log.splitlines():
+        if "needs fixing" in l:
+            lines.append("Düzeltilmesi gereken: yüzeyin %" + l.split("fixing:")[1].split("%")[0].strip() + "'i.")
+        if "with fix views" in l:
+            lines.append("AI düzeltmesinden sonra gerçek boyalı yüzey: %" + l.split(":")[-1].split("%")[0].strip())
+        if "nothing significant" in l:
+            lines.append("Düzeltilecek önemli bir yer bulunamadı.")
+    needp, _ = _run(pl.need_preview, work)
+    return (str(out / "model.glb"), str(out / "preview.png"), _files(out), "\n".join(lines), str(needp),
+            pairs, log)
 
 
 def _summary(log, n_ok, n_all):
@@ -198,6 +235,27 @@ def build():
             with gr.Row():
                 preview = gr.Image(label="8 açıdan önizleme", interactive=False, scale=2)
                 files = gr.File(label="İndir", file_count="multiple", interactive=False, scale=1)
+
+            gr.Markdown("## 4 · AI ile düzelt (yerel, kendi ekran kartında)", elem_classes="step-title")
+            gr.Markdown("Kırmızı yerler: hiçbir açının görmediği, zayıf gördüğü ya da açıların birbiriyle "
+                        "çeliştiği (dikiş izi) yerler. **AI ile düzelt** bu yerlere yakından bakan ekstra "
+                        "açılar çeker, senin boyattığın görselin stilinde sadece bu yerleri yeniden boyar ve "
+                        "modele geri yansıtır. İlk çalıştırmada model indirilir (~10 GB).")
+            with gr.Row():
+                needimg = gr.Image(label="Düzeltilecek yerler (kırmızı)", interactive=False, scale=2)
+                with gr.Column(scale=1):
+                    ai_prompt = gr.Textbox(label="Model ne? (kısa, İngilizce)",
+                                           placeholder="anime girl, blue hair, white bikini, tanned skin")
+                    with gr.Accordion("AI ayarları", open=False):
+                        ai_views = gr.Slider(1, 8, value=4, step=1, label="Düzeltme açısı sayısı")
+                        ai_strength = gr.Slider(0.3, 1.0, value=0.9, step=0.05,
+                                                label="Ne kadar yeniden boyasın (düşük = mevcut renge sadık)")
+                        ai_ip = gr.Slider(0.0, 1.0, value=0.5, step=0.05,
+                                          label="Stil referansı gücü (0 = kapalı)")
+                        ai_model = gr.Textbox(label="Model (boş = SDXL inpainting; HF id veya .safetensors yolu)")
+                    b3 = gr.Button("AI ile düzelt", variant="primary")
+            fixgal = gr.Gallery(label="AI'ın düzelttiği görüntüler (önce / sonra)", columns=4, height=260,
+                                object_fit="contain")
         with gr.Accordion("Teknik log", open=False):
             log = gr.Textbox(lines=12, show_label=False, interactive=False)
 
@@ -205,7 +263,9 @@ def build():
         b1.click(step1, [model, strip, views, up, yaw],
                  [work, names, gallery, zipf, prompt, s2, s3, clay, result, *slot_outs, log])
         bulk.upload(auto_fill, [bulk, work, names], [*slot_outs, match_info])
-        b2.click(step2, [work, names, tex, *slot_p], [clay, result, preview, files, summary, log])
+        b2.click(step2, [work, names, tex, *slot_p], [clay, result, preview, files, summary, needimg, fixgal, log])
+        b3.click(step3_ai, [work, tex, ai_prompt, ai_strength, ai_views, ai_model, ai_ip],
+                 [result, preview, files, summary, needimg, fixgal, log])
     return app
 
 

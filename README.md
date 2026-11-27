@@ -22,6 +22,37 @@ texproj ui        # Windows'ta: baslat.bat
    olursa o açının kutusuna doğrusunu koy. → **Çalıştır**.
 3. **Sonuç:** texture'sız ve texture'lı model yan yana, döndürülebilir 3D görüntüleyicide; altında
    8 açılı önizleme ve indirilecek dosyalar (GLB, OBJ, texture.png).
+4. **AI ile düzelt (yerel):** düzeltilmesi gereken yerler modelin üstünde kırmızıyla gösterilir.
+   Butona basınca program bu yerlere yakından bakan ekstra açılar çeker, kendi ekran kartında çalışan
+   SDXL ile **sadece bu yerleri** senin boyattığın görselin stilinde yeniden boyar ve modele geri
+   yansıtır. Önce/sonra görüntüleri de gösterilir.
+
+## Görseller neden yakınlaştırılmış
+
+Her açı modele sıkıca oturan kendi çerçevesiyle render edilir; uzun figürler için dikey (1024×1536),
+geniş görünüşler için yatay (1536×1024) format seçilir (ChatGPT'nin doğal oranları). Böylece
+görselin boş beyaz alanı küçülür ve aynı piksel sayısıyla modele çok daha fazla detay düşer
+(test modelinde ön/yan/arka 1.5 kat, üst/alt 2.7 kat).
+
+## Yerel AI düzeltme (API ve abonelik gerektirmez)
+
+Windows'ta bir kere **`kur_ai.bat`** çalıştır (PyTorch'un CUDA 12.8 sürümü + diffusers; RTX 50xx
+için bu sürüm gerekli). İlk "AI ile düzelt"te modeller indirilir (~10 GB: SDXL inpainting +
+IP-Adapter), sonraki çalıştırmalar bunları kullanır. 12 GB VRAM yeterli.
+
+Düzeltilecek yerler üç şeyden hesaplanır, ama sadece **bütün halinde** kötü olan bölgeler sayılır
+(kıvrımlardaki ince çizgilere dokunulmaz):
+
+- hiçbir açının görmediği yerler,
+- sadece çok yandan / zayıf görülen yerler,
+- birden fazla açının karıştığı ve birbiriyle çeliştiği yerler (dikiş izi / gölge kayması).
+
+AI maskenin dışındaki hiçbir pikseli değiştirmez; projeksiyon da sadece maskelenen pikselleri kullanır.
+Stil için IP-Adapter'a senin boyattığın ön görsel verilir. Ayarlar: düzeltme açısı sayısı, yeniden
+boyama gücü, stil referansı gücü; model alanına başka bir SDXL modeli (HF id ya da `.safetensors`
+yolu, örn. anime odaklı bir SDXL checkpoint) yazılabilir.
+
+Komut satırından: `texproj fix work --backend local --prompt "anime girl, blue hair"`.
 
 ## Windows'ta hızlı başlangıç
 

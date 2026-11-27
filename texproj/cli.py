@@ -21,7 +21,12 @@ def _add_stylize(p):
     p.add_argument("--ref", nargs="+", default=[], help="style reference image(s)")
     p.add_argument("--prompt", default="", help="extra instructions (what the object is, materials, ...)")
     p.add_argument("--mode", choices=["grid", "per-view", "hybrid"], default="grid")
-    p.add_argument("--backend", choices=["openai", "mock"], default="openai")
+    p.add_argument("--backend", choices=["openai", "local", "mock"], default="openai",
+                   help="local = your own GPU (only for the fix stage)")
+    p.add_argument("--local-model", default=None, help="SDXL inpainting model: HF repo id or .safetensors path")
+    p.add_argument("--strength", type=float, default=0.9, help="local AI: how strongly to repaint (0..1)")
+    p.add_argument("--steps", type=int, default=30, help="local AI: diffusion steps")
+    p.add_argument("--ip-scale", type=float, default=0.5, help="local AI: style-reference strength (0 = off)")
     p.add_argument("--image-model", default="gpt-image-2")
     p.add_argument("--quality", default="high")
     p.add_argument("--mock-jitter", type=float, default=0.0, help=argparse.SUPPRESS)
@@ -44,6 +49,10 @@ def _sty(a):
     return dict(backend=a.backend, model=a.image_model, quality=a.quality)
 
 
+def _local(a):
+    return dict(model=a.local_model, strength=a.strength, steps=a.steps, ip_scale=a.ip_scale)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="texproj", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -57,7 +66,7 @@ def main(argv=None):
     _add_project(p)
     p = sub.add_parser("fix", help="4) AI-repaint regions no view could see, then re-bake")
     p.add_argument("work")
-    p.add_argument("--max-views", type=int, default=3)
+    p.add_argument("--max-views", type=int, default=4)
     p.add_argument("--render-only", action="store_true", help="only write fix/views + fix/masks (manual workflow)")
     _add_stylize(p)
     _add_project(p)
@@ -86,11 +95,16 @@ def main(argv=None):
     elif a.cmd == "project":
         pl.project(a.work, _opts(a), log)
     elif a.cmd == "fix":
-        if pl.fix_prepare(a.work, a.max_views, _opts(a), log) and not a.render_only:
-            pl.fix_stylize(a.work, a.ref, a.prompt, log=log, **_sty(a))
+        if a.backend == "local" and not a.render_only:
+            pl.ai_fix(a.work, a.prompt, a.max_views, _opts(a), _local(a), log)
+        elif pl.fix_prepare(a.work, a.max_views, _opts(a), log) and not a.render_only:
+            pl.fix_stylize(a.work, a.ref, a.prompt, log=log, local_opts=_local(a), **_sty(a))
             pl.project(a.work, _opts(a), log)
     elif a.cmd == "run":
         pl.prepare(a.model, a.work, a.views, a.size, a.bg, a.up, a.yaw, a.unwrap, a.sheet_cell, a.no_texture, log)
+        if a.backend == "local":
+            raise SystemExit("run: the local backend only repairs (fix stage); paint the views in ChatGPT "
+                             "or use --backend openai")
         pl.stylize(a.work, a.ref, a.prompt, a.mode, jitter=a.mock_jitter, log=log, **_sty(a))
         if a.fix_views > 0 and pl.fix_prepare(a.work, a.fix_views, _opts(a), log):
             pl.fix_stylize(a.work, a.ref, a.prompt, log=log, **_sty(a))

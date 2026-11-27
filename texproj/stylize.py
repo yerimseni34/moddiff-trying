@@ -10,6 +10,7 @@ import time
 import numpy as np
 from PIL import Image
 from .render import make_sheet, split_sheet, grid_shape, render_view
+from .views import image_size
 
 RULES = (
     "HARD RULES: This is a texture-projection job, so geometry must be preserved exactly. "
@@ -59,13 +60,13 @@ class MockStylizer:
 
     def _one(self, view):
         c = self.ctx
-        img = Image.fromarray(render_view(c["mesh"], view, c["scale"], c["size"], bg=c["bg"],
-                                          color_fn=mock_color)[0])
+        W, H = image_size(view, c["size"])
+        img = Image.fromarray(render_view(c["mesh"], view, W, H, bg=c["bg"], color_fn=mock_color)[0])
         if self.jitter:
             s = 1 + self.rng.uniform(-self.jitter, self.jitter)
-            t = self.rng.uniform(-self.jitter, self.jitter, 2) * c["size"]
-            h = c["size"] / 2
-            img = img.transform(img.size, Image.AFFINE, (s, 0, h - s * h + t[0], 0, s, h - s * h + t[1]),
+            t = self.rng.uniform(-self.jitter, self.jitter, 2) * min(W, H)
+            img = img.transform(img.size, Image.AFFINE,
+                                (s, 0, W / 2 - s * W / 2 + t[0], 0, s, H / 2 - s * H / 2 + t[1]),
                                 resample=Image.BICUBIC, fillcolor=tuple(c["bg"]))
         return img
 
@@ -153,7 +154,7 @@ class OpenAIStylizer:
              f"sides, top and back). Keep every cell exactly where it is. {RULES} {prompt}")
         self.log(f"  grid call: {len(views)} views, sheet {sheet.size[0]}x{sheet.size[1]}")
         out = self.edit(sheet, refs, p)
-        return split_sheet(out, len(views)), out
+        return split_sheet(out, len(views), [r.size for r in renders]), out
 
     def _single(self, view, render, anchors, refs, prompt, guide=None):
         p = (f"Image 1 is an orthographic render of a 3D model seen from the {view.name.replace('_', ' ')}. ")
@@ -176,10 +177,9 @@ class OpenAIStylizer:
         if mode == "grid":
             cells, self.last_sheet = self._grid(views, renders, refs, prompt)
             return cells
-        size = renders[0].size
         if mode == "hybrid":  # consistency from the grid, resolution from per-view passes
             cells, self.last_sheet = self._grid(views, renders, refs, prompt)
-            return [self._single(v, r, [], refs, prompt, guide=c.resize(size, Image.LANCZOS))
+            return [self._single(v, r, [], refs, prompt, guide=c.resize(r.size, Image.LANCZOS))
                     for v, r, c in zip(views, renders, cells)]
         out = []  # per-view: earlier results are passed on as consistency anchors
         for v, r in zip(views, renders):

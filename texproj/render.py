@@ -2,7 +2,7 @@
 import numpy as np
 from PIL import Image
 from .raster import rasterize, interp
-from .views import basis, project_points, View
+from .views import basis, project_points, View, uniform_view, fit_scale
 
 
 def hex_rgb(h):
@@ -28,20 +28,19 @@ def bilinear(img, x, y):
     return a * (1 - fy) + b * fy
 
 
-def raster_view(mesh, view, scale, R):
-    x, y, z = project_points(mesh.p, view, scale, R)
-    return rasterize(np.stack([x, y], 1), z, mesh.f, R, R)
+def raster_view(mesh, view, W, H):
+    x, y, z = project_points(mesh.p, view, W, H)
+    return rasterize(np.stack([x, y], 1), z, mesh.f, W, H)
 
 
-def render_view(mesh, view, scale, size, bg=(255, 255, 255), texture=None,
+def render_view(mesh, view, W, H, bg=(255, 255, 255), texture=None,
                 shading=True, ss=2, color_fn=None):
-    """Returns (rgb uint8 (size,size,3), mask bool (size,size)).
+    """Returns (rgb uint8 (H,W,3), mask bool (H,W)) for a framed view.
 
     texture : optional (H,W,3) uint8 overriding the mesh's own colours
     color_fn: optional f(world_pos (N,3)) -> rgb 0..1 (used by the mock stylizer)
     """
-    R = size * ss
-    tri, bary, _ = raster_view(mesh, view, scale, R)
+    tri, bary, _ = raster_view(mesh, view, W * ss, H * ss)
     m = tri >= 0
     t, b = tri[m], bary[m]
     tex = texture if texture is not None else mesh.base_tex
@@ -66,11 +65,11 @@ def render_view(mesh, view, scale, size, bg=(255, 255, 255), texture=None,
         if texture is not None:
             lam = 0.85 + 0.15 * np.clip(n @ c, 0, 1)  # near-unlit for baked previews
         col = col * lam[:, None]
-    img = np.empty((R, R, 3), np.float32)
+    img = np.empty((H * ss, W * ss, 3), np.float32)
     img[:] = np.array(bg, np.float32) / 255.0
     img[m] = np.clip(col, 0, 1)
-    img = img.reshape(size, ss, size, ss, 3).mean((1, 3))
-    cov = m.reshape(size, ss, size, ss).mean((1, 3))
+    img = img.reshape(H, ss, W, ss, 3).mean((1, 3))
+    cov = m.reshape(H, ss, W, ss).mean((1, 3))
     return (img * 255 + 0.5).astype(np.uint8), cov > 0.5
 
 
@@ -83,15 +82,29 @@ def grid_shape(n):
     return cols, int(np.ceil(n / cols))
 
 
+def pad_to_aspect(img, aspect, bg=(255, 255, 255)):
+    """Pad a PIL image (centred, never cropped or stretched) to width/height == aspect."""
+    w, h = img.size
+    if abs(w / h - aspect) < 1e-3:
+        return img
+    W, H = (w, round(w / aspect)) if w / h > aspect else (round(h * aspect), h)
+    out = Image.new("RGB", (W, H), tuple(bg))
+    out.paste(img.convert("RGB"), ((W - w) // 2, (H - h) // 2))
+    return out
+
+
 def make_sheet(images, cell, bg=(255, 255, 255)):
+    """Grid of square cells; non-square images are fitted inside their cell (letterboxed)."""
     cols, rows = grid_shape(len(images))
     sheet = Image.new("RGB", (cols * cell, rows * cell), bg)
     for i, im in enumerate(images):
-        sheet.paste(im.resize((cell, cell), Image.LANCZOS), ((i % cols) * cell, (i // cols) * cell))
+        sq = pad_to_aspect(im, 1.0, bg).resize((cell, cell), Image.LANCZOS)
+        sheet.paste(sq, ((i % cols) * cell, (i // cols) * cell))
     return sheet
 
 
-def split_sheet(sheet, n):
+def split_sheet(sheet, n, sizes=None):
+    """Inverse of make_sheet. sizes: optional list of original (W, H) to undo the letterbox."""
     cols, rows = grid_shape(n)
     W, H = sheet.size
     out = []
@@ -99,12 +112,20 @@ def split_sheet(sheet, n):
         cx, cy = i % cols, i // cols
         box = (round(cx * W / cols), round(cy * H / rows),
                round((cx + 1) * W / cols), round((cy + 1) * H / rows))
-        out.append(sheet.crop(box))
+        cell = sheet.crop(box)
+        if sizes is not None:
+            w, h = sizes[i]
+            cw, ch = cell.size
+            iw, ih = (cw, round(cw * h / w)) if w >= h else (round(ch * w / h), ch)
+            l, t = (cw - iw) // 2, (ch - ih) // 2
+            cell = cell.crop((l, t, l + iw, t + ih)).resize((w, h), Image.LANCZOS)
+        out.append(cell)
     return out
 
 
-def preview_sheet(mesh, scale, texture, size=512, n=8, el=18.0):
+def preview_sheet(mesh, texture, size=512, n=8, el=18.0):
     views = [View(f"p{i}", 360.0 * i / n + 22.5, el if i % 2 == 0 else -el) for i in range(n)]
-    ims = [Image.fromarray(render_view(mesh, v, scale * 0.9, size, bg=(46, 48, 54), texture=texture)[0])
-           for v in views]
+    scale = fit_scale(mesh.p, views, fill=0.92)
+    ims = [Image.fromarray(render_view(mesh, uniform_view(v, scale), size, size, bg=(46, 48, 54),
+                                       texture=texture)[0]) for v in views]
     return make_sheet(ims, size, bg=(46, 48, 54))
