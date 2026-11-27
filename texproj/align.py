@@ -71,17 +71,16 @@ def match_to_views(images, renders):
     assignment[i] = index of the image used for view i (or None) and scores[i] its IoU.
     """
     from scipy.optimize import linear_sum_assignment
+    from .render import pad_to_aspect
     S = 256
-    tmasks = [foreground_mask(r.convert("RGB").resize((S, S), Image.BILINEAR)) for r in renders]
+    # both sides are padded (never stretched) to a square, so their shapes stay comparable
+    sq = lambda im: pad_to_aspect(im.convert("RGB"), 1.0).resize((S, S), Image.BILINEAR)
+    tmasks = [foreground_mask(sq(r)) for r in renders]
     cost = np.zeros((len(renders), len(images)))
     for j, im in enumerate(images):
-        im = im.convert("RGB")
-        side = max(im.size)  # pad to square (views are square)
-        sq = Image.new("RGB", (side, side), (255, 255, 255))
-        sq.paste(im, ((side - im.size[0]) // 2, (side - im.size[1]) // 2))
-        sq = sq.resize((S, S), Image.BILINEAR)
+        a = sq(im)
         for i, t in enumerate(tmasks):
-            _, _, info = align_to_mask(sq, t)
+            _, _, info = align_to_mask(a, t)
             cost[i, j] = -info["iou"]
     rows, cols = linear_sum_assignment(cost)
     assign, scores = [None] * len(renders), [0.0] * len(renders)

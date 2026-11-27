@@ -273,7 +273,7 @@ def ai_fix(work, prompt="", max_views=4, opts=None, local_opts=None, log=print):
     return project(work, opts, log)
 
 
-def need_preview(work, size=384):
+def need_preview(work, size=384, log=print):
     """Preview of the current result with the regions that need fixing tinted red."""
     ctx = context(work)
     out = ctx["work"] / "out"
