@@ -49,7 +49,8 @@ def _load(model, use_ip, device, log):
     if key in _CACHE:
         return _CACHE[key]
     _CACHE.clear()  # only one pipeline in memory at a time
-    dtype = torch.float16 if device == "cuda" else torch.float32
+    # half precision everywhere: fp16 on the GPU, bf16 on CPU (fp32 SDXL needs >15 GB RAM)
+    dtype = torch.float16 if device in ("cuda", "mps") else torch.bfloat16
     t0 = time.time()
     log(f"  loading {model} (first run downloads it, this can take a while) ...")
     if str(model).lower().endswith((".safetensors", ".ckpt")):
