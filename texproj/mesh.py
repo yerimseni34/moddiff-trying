@@ -94,6 +94,14 @@ def load_work(workdir):
     return m
 
 
+def export_clay(mesh, path):
+    """Untextured (plain grey) GLB, for side-by-side comparison."""
+    import trimesh
+    tm = trimesh.Trimesh(mesh.v, mesh.f, process=False)
+    tm.visual = trimesh.visual.ColorVisuals(tm, vertex_colors=[150, 150, 155, 255])
+    tm.export(path)
+
+
 def export(mesh, texture, outdir, name="model"):
     """Write OBJ+MTL+PNG and GLB with the baked texture."""
     outdir = Path(outdir)

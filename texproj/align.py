@@ -62,3 +62,29 @@ def align_to_mask(img, target, bg=(255, 255, 255), max_scale=1.2):
                     shift=(round(float(tx0 - sx0 / a), 1), round(float(ty0 - sy0 / e), 1)))
         return warped, fg2, info
     return img, fg, info
+
+
+def match_to_views(images, renders):
+    """Assign painted images (any order / any names) to views by silhouette shape.
+
+    images, renders: lists of PIL images. Returns (assignment, scores) where
+    assignment[i] = index of the image used for view i (or None) and scores[i] its IoU.
+    """
+    from scipy.optimize import linear_sum_assignment
+    S = 256
+    tmasks = [foreground_mask(r.convert("RGB").resize((S, S), Image.BILINEAR)) for r in renders]
+    cost = np.zeros((len(renders), len(images)))
+    for j, im in enumerate(images):
+        im = im.convert("RGB")
+        side = max(im.size)  # pad to square (views are square)
+        sq = Image.new("RGB", (side, side), (255, 255, 255))
+        sq.paste(im, ((side - im.size[0]) // 2, (side - im.size[1]) // 2))
+        sq = sq.resize((S, S), Image.BILINEAR)
+        for i, t in enumerate(tmasks):
+            _, _, info = align_to_mask(sq, t)
+            cost[i, j] = -info["iou"]
+    rows, cols = linear_sum_assignment(cost)
+    assign, scores = [None] * len(renders), [0.0] * len(renders)
+    for r, c in zip(rows, cols):
+        assign[r], scores[r] = int(c), float(-cost[r, c])
+    return assign, scores

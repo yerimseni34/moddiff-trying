@@ -12,13 +12,16 @@ Blender'a hiç girmeden, tek komutla:
 ## Arayüz
 
 ```bash
-texproj ui
+texproj ui        # Windows'ta: baslat.bat
 ```
 
-Tarayıcıda açılır: modeli yükle → **Render al** → `sheet.png`'yi indirip (hazır prompt'la birlikte)
-ChatGPT'de boyat → boyanmış sheet'i yükle → **Projekte et**. Sonuç 3D görüntüleyicide ve 8 açılı
-önizlemede görünür; texture / GLB / OBJ indirilebilir. 3. adım görülmeyen yerler için düzeltme
-açıları üretir. API anahtarın varsa "API ile (otomatik)" sekmesi boyamayı da kendi yapar.
+1. **Model:** dosyayı yükle → **Görselleri hazırla**. Boyatılacak açılar, hepsini içeren bir zip ve
+   ChatGPT prompt'u çıkar.
+2. **Boyanmış görselleri yükle:** ChatGPT'den gelenleri hepsini birden sürükle. İsimleri ve sırası
+   önemli değil; program siluetlerine bakıp hangi açıya ait olduklarını kendisi bulur. Yanlış eşleşen
+   olursa o açının kutusuna doğrusunu koy. → **Çalıştır**.
+3. **Sonuç:** texture'sız ve texture'lı model yan yana, döndürülebilir 3D görüntüleyicide; altında
+   8 açılı önizleme ve indirilecek dosyalar (GLB, OBJ, texture.png).
 
 ## Windows'ta hızlı başlangıç
 
